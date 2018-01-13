@@ -1,15 +1,24 @@
-FROM golang:1.9-stretch
-MAINTAINER Lars Gierth <lgierth@ipfs.io>
+FROM golang:1.9.2-alpine
+MAINTAINER John Stafford <john@jkms.me>
 
 # There is a copy of this Dockerfile called Dockerfile.fast,
 # which is optimized for build time, instead of image size.
 #
 # Please keep these two Dockerfiles in sync.
-
 ENV GX_IPFS ""
 ENV SRC_DIR /go/src/github.com/ipfs/go-ipfs
 
 COPY . $SRC_DIR
+
+# Get su-exec, a very minimal tool for dropping privileges,
+# and tini, a very minimal init daemon for containers
+RUN apk update
+RUN apk add build-base git binutils binutils-gold libc6-compat
+RUN apk add su-exec
+RUN apk add tini
+
+# Get the TLS CA certificates, they're not provided by busybox.
+RUN apk add ca-certificates openssl
 
 # Build the thing.
 # Also: fix getting HEAD commit hash via git rev-parse.
@@ -19,37 +28,12 @@ RUN cd $SRC_DIR \
   && ([ -z "$GX_IPFS" ] || echo $GX_IPFS > /root/.ipfs/api) \
   && make build
 
-# Get su-exec, a very minimal tool for dropping privileges,
-# and tini, a very minimal init daemon for containers
-ENV SUEXEC_VERSION v0.2
-ENV TINI_VERSION v0.16.1
-RUN set -x \
-  && cd /tmp \
-  && git clone https://github.com/ncopa/su-exec.git \
-  && cd su-exec \
-  && git checkout -q $SUEXEC_VERSION \
-  && make \
-  && cd /tmp \
-  && wget -q -O tini https://github.com/krallin/tini/releases/download/$TINI_VERSION/tini \
-  && chmod +x tini
-
-# Get the TLS CA certificates, they're not provided by busybox.
-RUN apt-get update && apt-get install -y ca-certificates
-
-# Now comes the actual target image, which aims to be as small as possible.
-FROM busybox:1-glibc
-MAINTAINER Lars Gierth <lgierth@ipfs.io>
-
-# Get the ipfs binary, entrypoint script, and TLS CAs from the build container.
-ENV SRC_DIR /go/src/github.com/ipfs/go-ipfs
-COPY --from=0 $SRC_DIR/cmd/ipfs/ipfs /usr/local/bin/ipfs
-COPY --from=0 $SRC_DIR/bin/container_daemon /usr/local/bin/start_ipfs
-COPY --from=0 /tmp/su-exec/su-exec /sbin/su-exec
-COPY --from=0 /tmp/tini /sbin/tini
-COPY --from=0 /etc/ssl/certs /etc/ssl/certs
+# Get the ipfs binary, and entrypoint script
+RUN cp $SRC_DIR/cmd/ipfs/ipfs /usr/local/bin/ipfs
+RUN cp $SRC_DIR/bin/container_daemon /usr/local/bin/start_ipfs
 
 # This shared lib (part of glibc) doesn't seem to be included with busybox.
-COPY --from=0 /lib/x86_64-linux-gnu/libdl-2.24.so /lib/libdl.so.2
+# COPY --from=0 /lib/x86_64-linux-gnu/libdl-2.24.so /lib/libdl.so.2
 
 # Ports for Swarm TCP, Swarm uTP, API, Gateway, Swarm Websockets
 EXPOSE 4001
