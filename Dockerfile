@@ -1,4 +1,4 @@
-FROM golang:1.9.2-alpine
+FROM golang:1.9.2-alpine as builder
 MAINTAINER John Stafford <john@jkms.me>
 
 # There is a copy of this Dockerfile called Dockerfile.fast,
@@ -28,9 +28,22 @@ RUN cd $SRC_DIR \
   && ([ -z "$GX_IPFS" ] || echo $GX_IPFS > /root/.ipfs/api) \
   && make build
 
-# Get the ipfs binary, and entrypoint script
-RUN cp $SRC_DIR/cmd/ipfs/ipfs /usr/local/bin/ipfs
-RUN cp $SRC_DIR/bin/container_daemon /usr/local/bin/start_ipfs
+# Now comes the actual target image, which aims to be as small as possible.
+FROM hypriot/rpi-alpine
+MAINTAINER John Stafford <john@jkms.me>
+
+# Get the ipfs binary, entrypoint script, and TLS CAs from the build container.
+ENV SRC_DIR /go/src/github.com/ipfs/go-ipfs
+COPY --from=builder $SRC_DIR/cmd/ipfs/ipfs /usr/local/bin/ipfs
+COPY --from=builder $SRC_DIR/bin/container_daemon /usr/local/bin/start_ipfs
+
+RUN apk update
+RUN apk add su-exec
+RUN apk add tini
+
+# Get the TLS CA certificates, they're not provided by busybox.
+RUN apk add ca-certificates openssl
+
 
 # This shared lib (part of glibc) doesn't seem to be included with busybox.
 # COPY --from=0 /lib/x86_64-linux-gnu/libdl-2.24.so /lib/libdl.so.2
