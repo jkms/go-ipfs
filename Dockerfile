@@ -14,8 +14,6 @@ COPY . $SRC_DIR
 # and tini, a very minimal init daemon for containers
 RUN apk update
 RUN apk add build-base git binutils binutils-gold libc6-compat
-RUN apk add su-exec
-RUN apk add tini
 
 # Get the TLS CA certificates, they're not provided by busybox.
 RUN apk add ca-certificates openssl
